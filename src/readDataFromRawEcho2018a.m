@@ -196,8 +196,10 @@ for FrameHeadLocInd = FrameHeadLoc
         %% 读IQ数据到复数数组中   
         TotalIQ = (WaveGateWidthTemp) * 2; % 这里为什么+1？去掉
         signalIQ = fread(FileHandleId, TotalIQ, 'int32');
-        signalIQ = reshape(signalIQ, [], 2);
-        ComplexIQTemp = complex(signalIQ(:,1), signalIQ(:,2));
+        % signalIQ = reshape(signalIQ, [], 2);
+        % ComplexIQTemp = complex(signalIQ(:,1), signalIQ(:,2)); 错误！！
+        % IQ 应该是一个接一个， 但是我在一半的时候reshape了， 后面一半当成了Q
+        ComplexIQTemp = complex(signalIQ(1:2:end), signalIQ(2:2:end));
         
         % 确保读完一帧，出错代表解析错误
         % 2021/7/15日修改，

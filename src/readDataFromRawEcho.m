@@ -2,6 +2,7 @@ function DataFileTable = readDataFromRawEcho(RadarFileName)
 % 这个位置是写文档用的
 % ref https://ww2.mathworks.cn/matlabcentral/answers/385608-how-to-process-a-large-binary-file-with-set-skipping-patterns
 % 打开文件为读, 获取文件指针
+% 2021/7/15 修改结束标志， 直接按照波门宽度采样，少一个点也没问题
 FileHandleId = fopen(RadarFileName, 'rb', 'ieee-le');
 if (FileHandleId == -1)
     error(['Error opening', RadarFileName, 'for input.']);
@@ -35,7 +36,8 @@ WaveGateFrontV = zeros(TotalFrames, 1);
 WaveGateWidthV = zeros(TotalFrames, 1);
 BandWidthV = zeros(TotalFrames, 1);
 SampleRateV = zeros(TotalFrames, 1);
-
+BigCode = zeros(TotalFrames, 1);
+LittleCode = zeros(TotalFrames, 1);
 % 信息数据结构下标
 index = 1;
 for FrameHeadLocInd = FrameHeadLoc
@@ -160,10 +162,18 @@ for FrameHeadLocInd = FrameHeadLoc
         EleTemp = fread(FileHandleId, 1, 'uint16');
         EleTemp = EleTemp * 0.005493164;
         EleV(index) = EleTemp;
+        %% 解码大小编码 
+        fseek(FileHandleId, (468-430)*2, 'cof');
+        BigCodeTemp = fread(FileHandleId, 1, 'uint16');
+        BigCode(index) = BigCodeTemp;
+        % 跳 2word
+        fread(FileHandleId, 2, 'uint16');
+        LittleCodeTemp = fread(FileHandleId, 1, 'uint16');
+        LittleCode(index) = LittleCodeTemp;
         
         %% 读脉冲重复周期、脉宽、
         % 读脉冲重复周期
-        fseek(FileHandleId, (490-430)*2, 'cof');  % 出问题了，应该用相对位置
+        fseek(FileHandleId, (490-472)*2, 'cof');   % 出问题了，应该用相对位置
         PRTTemp = fread(FileHandleId, 1, 'uint16');
         PRTV(index) = PRTTemp;
         % 跳3word
@@ -180,19 +190,28 @@ for FrameHeadLocInd = FrameHeadLoc
         end
         
         %% 读IQ数据到复数数组中   
-        TotalIQ = (WaveGateWidthTemp+1) * 2;
-        signalIQ = fread(FileHandleId, TotalIQ, 'int32');
-        signalIQ = reshape(signalIQ, [], 2);
-        ComplexIQTemp = complex(signalIQ(:,1), signalIQ(:,2));
+        TotalIQ = (WaveGateWidthTemp) * 2; % I Q 两个 所以加倍                  % 这里为什么+1？去掉
+        signalIQ = fread(FileHandleId, TotalIQ, 'int32'); 
+        % signalIQ = reshape(signalIQ, [], 2);
+        % ComplexIQTemp = complex(signalIQ(:,1), signalIQ(:,2)); 错误！！
+        % IQ 应该是一个接一个， 但是我在一半的时候reshape了， 后面一半当成了Q
+        ComplexIQTemp = complex(signalIQ(1:2:end), signalIQ(2:2:end));
         
         % 确保读完一帧，出错代表解析错误
-        tempIQ = fread(FileHandleId, 1, 'int32');
-        if tempIQ ~= FrameHeadFlagInt
-            error('未读到帧结束标志');
-        end 
+        % 2021/7/15日修改，
+%         while ~feof(FileHandleId)
+%             tempIQ = fread(FileHandleId, 1, 'int32');
+%             if tempIQ == FrameHeadFlagInt
+%                 break;
+%             else
+%                 if feof(FileHandleId)
+%                     error('读帧错误！');
+%                 end
+%             end
+%         end
+            
         % 放到Data数据结构体中
         Data(index).IQ = ComplexIQTemp;
-        
         index = index + 1;
         
 end
@@ -211,7 +230,8 @@ DataFileTable.WaveGateFront = WaveGateFrontV;
 DataFileTable.WaveGateWidth = WaveGateWidthV;
 DataFileTable.BandWidth = BandWidthV;
 DataFileTable.SampleRate = SampleRateV;
-
+DataFileTable.BigCode = BigCode;
+DataFileTable.LittleCode = LittleCode;
 fclose(FileHandleId);
     
 
